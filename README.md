@@ -1,85 +1,125 @@
-# Zybooks Solver
+# I Don't Like Zybooks
 
-Automated solver for Zybooks educational platform questions using Selenium WebDriver.
+An automated Zybooks solver built with Python and Selenium WebDriver to help students complete interactive exercises more efficiently.
 
-## Project Structure
+## ✨ Features
+
+- **🎯 Multiple Question Types**: Supports radio/multiple choice questions with additional solver types in development
+- **🖥️ User-Friendly GUI**: Clean tkinter interface with real-time logging
+- **⚡ Force Mode**: Re-solve already completed questions
+- **🛑 Stop/Start Control**: Pause and resume execution anytime
+- **🔄 Automated Browser**: Handles Zybooks navigation with Selenium
+- **📝 Detailed Logging**: Timestamped logs with success/error tracking
+- **🧵 Threaded Execution**: Non-blocking design keeps GUI responsive
+- **🎲 Randomized Delays**: Human-like timing to avoid detection
+
+## 📂 Project Structure
 
 ```
-zybooks_solver/
-├── main.py                    # Entry point - launches GUI and browser
-├── config.py                  # Constants, selectors, delays
+I-dont-like-zybooks/
+├── main.py                    # Application entry point
+├── config.py                  # Configuration & selectors
 ├── requirements.txt           # Python dependencies
 ├── gui/
 │   ├── __init__.py
-│   └── control_panel.py      # tkinter GUI control panel
+│   └── control_panel.py      # GUI control panel
 ├── solvers/
 │   ├── __init__.py
-│   ├── base_solver.py        # Base class with common methods
-│   ├── radio_solver.py       # ✓ FULLY IMPLEMENTED
-│   ├── animation_solver.py   # ✗ Stub (not implemented)
-│   ├── clickable_solver.py   # ✗ Stub (not implemented)
-│   ├── short_answer_solver.py # ✗ Stub (not implemented)
-│   └── drag_drop_solver.py   # ✗ Stub (not implemented)
+│   ├── base_solver.py        # Base solver class
+│   ├── radio_solver.py       # ✓ Multiple choice/True-False
+│   ├── animation_solver.py   # 🚧 In progress
+│   ├── question_scanner.py   # Question detection utilities
+│   └── short_answer_solver.py # 🚧 In progress
 └── utils/
     ├── __init__.py
-    ├── browser.py            # Browser setup/control
-    └── logger.py             # Logging utilities
+    ├── browser.py            # Chrome WebDriver setup
+    ├── logger.py             # Logging system
+    └── timing.py             # Delay utilities
 ```
 
-## Installation
+## 🚀 Installation
 
-1. Install Python 3.8 or higher
-2. Install dependencies:
+### Prerequisites
+- Python 3.8 or higher
+- Chrome browser installed
+- Git (for cloning)
+
+### Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/Nicklovesfoxes/I-dont-like-zybooks.git
+   cd I-dont-like-zybooks
+   ```
+
+2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-## Usage
-
-1. Run the main script:
+3. **Run the application**
    ```bash
    python main.py
    ```
 
-2. A Chrome browser window will open and navigate to Zybooks
-3. A control panel GUI will appear
-4. Manually log in to Zybooks in the browser window
-5. Navigate to the chapter/section you want to solve
-6. Select an action from the dropdown in the control panel
-7. Optionally enable "Force Mode" to re-solve completed questions
-8. Click "Run" to start the solver
-9. Click "Stop" to halt execution at any time
-10. Click "Show Output" to see detailed logs
+## 📖 Usage
 
-## Implemented Features
+1. **Launch the application**
+   ```bash
+   python main.py
+   ```
 
-### ✓ Radio Question Solver
-- Fully functional solver for multiple choice and True/False questions
-- Automatically detects and skips completed questions (unless Force Mode enabled)
-- Tries each option until correct answer is found
-- Proper feedback detection at document level
-- Random delays between questions to appear more human-like
+2. **Sign in to Zybooks**
+   - Chrome will open automatically
+   - Log in to your Zybooks account manually
+   - Navigate to your desired chapter/section
 
-### ✗ Other Solvers (Not Yet Implemented)
-- Animation Solver
-- Clickable Question Solver
-- Short Answer Solver
-- Drag & Drop Solver
+3. **Use the control panel**
+   - Select a solver from the dropdown menu
+   - Enable "Force Mode" if you want to re-solve completed questions
+   - Click "Run" to start solving
+   - Click "Stop" to pause execution
+   - Click "Show Output" for detailed logs
 
-These solvers currently just print a "not implemented" message.
+## ✅ Solver Status
 
-## Features
+| Solver Type | Status | Description |
+|------------|--------|-------------|
+| Radio Questions | ✅ Complete | Multiple choice & True/False questions |
+| Animation | 🚧 In Progress | Interactive animation exercises |
+| Short Answer | 🚧 In Progress | Text-based answer fields |
+| Clickable | ⏳ Planned | Click-based interactions |
+| Drag & Drop | ⏳ Planned | Drag-and-drop exercises |
 
-- **GUI Control Panel**: Easy-to-use interface with tkinter
-- **Force Mode**: Re-solve already completed questions
-- **Stop/Start Control**: Pause execution at any time
-- **Detailed Logging**: Timestamped logs with success/error indicators
-- **Threading**: Non-blocking execution prevents GUI freezing
-- **Modular Design**: Easy to extend with new solver types
+## 🛠️ Technical Details
 
-## Development Notes
+### Technologies Used
+- **Python 3.8+**: Core programming language
+- **Selenium WebDriver**: Browser automation
+- **tkinter**: GUI framework
+- **Threading**: Asynchronous execution
+- **Chrome Driver**: Browser control
 
-- Only Radio Question Solver is currently implemented
-- Other solvers are stubbed out and ready for implementation
-- Follows the specification from `zybooks-solver-python-spec.txt`
-- Uses thread-safe logging with GUI callbacks
+### Architecture
+- **Modular Design**: Each solver type is independent
+- **Base Solver Class**: Shared functionality across all solvers
+- **Thread-Safe Logging**: Real-time GUI updates without blocking
+- **Configuration Management**: Centralized settings in `config.py`
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to:
+- Report bugs
+- Suggest new features
+- Submit pull requests
+- Improve documentation
+
+## 📝 License
+
+This project is for educational purposes. Use responsibly.
+
+## 👤 Author
+
+**Nicklovesfoxes**
+- GitHub: [@Nicklovesfoxes](https://github.com/Nicklovesfoxes)
+- Repository: [I-dont-like-zybooks](https://github.com/Nicklovesfoxes/I-dont-like-zybooks)
