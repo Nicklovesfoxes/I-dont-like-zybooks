@@ -1,0 +1,920 @@
+===============================================================================
+ZYBOOKS SOLVER - PYTHON IMPLEMENTATION SPECIFICATION
+===============================================================================
+
+PROJECT OVERVIEW:
+Convert a JavaScript Tampermonkey userscript into a Python-based browser automation
+tool using Selenium or Playwright to automatically solve Zybooks educational 
+platform activities.
+
+TARGET WEBSITE: learn.zybooks.com
+BROWSER AUTOMATION: Selenium WebDriver (recommended) or Playwright
+GUI FRAMEWORK: tkinter or PyQt5 for control panel
+
+===============================================================================
+CORE ALGORITHM & WORKFLOW
+===============================================================================
+
+1. INITIALIZATION
+   - Launch browser in non-headless mode (user needs to see what's happening)
+   - Navigate to Zybooks website
+   - User manually logs in (automation starts after login)
+   - Create control panel window (separate from browser)
+
+2. MAIN CONTROL PANEL UI
+   Components needed:
+   - Dropdown menu: Select question type to solve
+     Options: All, Animations, Radio Questions, Clickable Questions, 
+              Short Answer, Drag & Drop, Reset Chevrons
+   - Checkbox: "Force Mode" (re-solve already completed questions)
+   - Button: "Run" (start automation)
+   - Button: "Stop" (halt automation)
+   - Text output area: Show logs with timestamps
+   - Button: "Show/Hide Output" (toggle log visibility)
+
+3. UNIFIED QUESTION DETECTION & CLASSIFICATION SYSTEM
+
+   CRITICAL: Before ANY solver runs, the system must:
+   
+   a. SCAN PHASE (runs first, every time):
+      - Detect ALL questions on the current page
+      - Classify each question by type
+      - Check completion status for each question
+      - Store results in unified question array
+      - Output full scan results to log
+   
+   b. FILTER PHASE:
+      - Filter question array based on selected solver type
+      - If "Solve All" selected: process all question types
+      - If specific solver selected: process only that type
+      - Apply force mode filter (skip completed unless force mode enabled)
+   
+   c. SOLVE PHASE:
+      - Pass filtered questions to appropriate solver(s)
+      - Each solver processes only its question type from the array
+
+   Question Object Structure:
+   {
+       'index': 0,                    # Position on page (0-based)
+       'type': 'radio',               # Type: radio, animation, clickable, short_answer, drag_drop
+       'element': WebElement,         # Reference to DOM element
+       'completed': True/False,       # Completion status
+       'details': {...}               # Type-specific metadata
+   }
+
+4. QUESTION TYPE DETECTION & CLASSIFICATION ALGORITHM
+
+   The scanner must detect questions in page order and classify them:
+   
+   Detection Order (scan in DOM order to maintain question sequence):
+   
+   1. ANIMATION QUESTIONS:
+      Selector: div[class*="interactive-activity-container"][class*="animation-player"]
+      Completion Check: chevron has "filled" or "orange" class
+      
+   2. RADIO QUESTIONS:
+      Selector: div[class*="question"] containing input[type="radio"]
+      Completion Check: any radio button has .checked = true
+      
+   3. CLICKABLE QUESTIONS:
+      Selector: div.detect-answer-question
+      Completion Check: chevron.filled class present
+      
+   4. SHORT ANSWER QUESTIONS:
+      Selector: div.question-set-question.short-answer-question
+      Completion Check: chevron.filled class present
+      
+   5. DRAG & DROP QUESTIONS:
+      Selector: div.definition-match-payload
+      Completion Check: all rows have div.definition-match-explanation.correct
+
+   Output Format After Scan:
+   ```
+   [SCAN RESULTS]
+   ==================================================
+   Found 15 questions on page:
+   
+   1. [Animation]        ✓ Completed
+   2. [Radio]            ✗ Incomplete
+   3. [Radio]            ✓ Completed
+   4. [Clickable]        ✗ Incomplete
+   5. [Short Answer]     ✗ Incomplete
+   6. [Animation]        ✓ Completed
+   7. [Drag & Drop]      ✗ Incomplete
+   8. [Radio]            ✗ Incomplete
+   9. [Radio]            ✗ Incomplete
+   10. [Animation]       ✓ Completed
+   11. [Clickable]       ✗ Incomplete
+   12. [Short Answer]    ✓ Completed
+   13. [Drag & Drop]     ✗ Incomplete
+   14. [Radio]           ✗ Incomplete
+   15. [Animation]       ✗ Incomplete
+   
+   Summary:
+   - Radio: 5 total (2 completed, 3 incomplete)
+   - Animation: 4 total (3 completed, 1 incomplete)
+   - Clickable: 2 total (0 completed, 2 incomplete)
+   - Short Answer: 2 total (1 completed, 1 incomplete)
+   - Drag & Drop: 2 total (0 completed, 2 incomplete)
+   ==================================================
+   ```
+
+===============================================================================
+DETAILED SOLVER ALGORITHMS
+===============================================================================
+
+-----------------------------------
+A. ANIMATION SOLVER
+-----------------------------------
+Purpose: Click through animation steps until completion
+
+Selectors:
+- Container: div[class*="interactive-activity-container"][class*="animation-player"]
+- Chevron indicator: div[class*="zb-chevron"][class*="title-bar-chevron"]
+- Speed checkbox: div[class*="speed-control"] input[type="checkbox"]
+- Start button: button[class*="start-button"]
+- Play button: button[aria-label="Play"]
+
+Algorithm:
+1. Find all animation containers on page
+2. For each container:
+   a. Check if already completed (chevron has "filled" or "orange" class)
+   b. If completed and not force mode: skip
+   c. Enable 2x speed checkbox if available
+   d. Click start button
+   e. Loop (max 40 attempts or 35 seconds):
+      - Click play button
+      - Wait 100ms
+      - Check if completed (chevron.filled)
+      - If completed: move to next animation
+   f. Wait random delay 500-2000ms before next animation
+
+Completion Detection: chevron.classList.contains('filled')
+
+-----------------------------------
+B. RADIO QUESTIONS SOLVER
+-----------------------------------
+Purpose: Select correct answer from multiple choice (includes True/False)
+
+Selectors:
+- Questions: div[class*="question"] containing input[type="radio"]
+- Radio buttons: div.zb-radio-button > input
+- Feedback correct: div.zb-explanation.correct (APPEARS AT DOCUMENT LEVEL!)
+- Feedback incorrect: div.zb-explanation.incorrect (APPEARS AT DOCUMENT LEVEL!)
+
+CRITICAL IMPLEMENTATION DETAILS:
+- Feedback appears globally (document.querySelector), NOT within question element
+- Must check if radio button already selected (radio.checked) to skip completed
+- Old feedback persists briefly, must wait 500ms after clicking before checking
+
+Algorithm:
+1. Find all questions with radio buttons:
+   - Search all div[class*="content-resource"]
+   - Within each, find div[class*="question"] that has input[type="radio"]
+2. Filter out completed questions:
+   - Check if any radio button in question has .checked = true
+   - If yes: skip (unless force mode)
+3. For each unanswered question:
+   a. Get all radio buttons in question
+   b. For each radio button:
+      i. Click the radio button
+      ii. Wait 500ms (let old feedback clear)
+      iii. Start checking for feedback (at DOCUMENT level):
+          - Loop for up to 2 seconds checking every 100ms:
+            * correct = document.querySelector('div.zb-explanation.correct')
+            * incorrect = document.querySelector('div.zb-explanation.incorrect')
+          - If correct found: log success, move to next question
+          - If incorrect found: break inner loop, try next radio button
+      iv. If no feedback after 2s: try next radio button
+   c. Wait random delay 500-2000ms before next question
+
+Example flow:
+Question has [True, False] buttons
+1. Click "True" → wait 500ms → check feedback globally → "correct" found → done
+2. Click "True" → wait 500ms → check feedback globally → "incorrect" found → try "False"
+3. Click "False" → wait 500ms → check feedback globally → "correct" found → done
+
+-----------------------------------
+C. CLICKABLE QUESTIONS SOLVER
+-----------------------------------
+Purpose: Click correct button from multiple button options
+
+Selectors:
+- Container: div.detect-answer-content-resource
+- Questions: div.detect-answer-question
+- Buttons: button.zb-button (not check-button or show-answer-button)
+- Chevron: div.zb-chevron.question-chevron
+
+Algorithm:
+1. Find all clickable question containers
+2. For each container, find all questions within
+3. For each question:
+   a. Check chevron.filled - if filled and not force mode: skip
+   b. Find all buttons in question (excluding check/show-answer buttons)
+   c. For each button:
+      i. If button has 'clicked' class: skip
+      ii. Click button
+      iii. Wait and check button classes (up to 2 seconds):
+          - If button.classList.contains('correct'): success, next question
+          - If button.classList.contains('incorrect'): try next button
+   d. Wait random delay before next question
+
+-----------------------------------
+D. SHORT ANSWER SOLVER
+-----------------------------------
+Purpose: Show answer, copy it, submit it
+
+Selectors:
+- Container: div.short-answer-content-resource
+- Question: div.question-set-question.short-answer-question
+- Textarea: textarea.zb-text-area (or fallbacks: textarea, input[type="text"], input)
+- Show Answer button: button.show-answer-button
+- Check button: button.check-button
+- Answers: div.answers span.forfeit-answer (after showing answer)
+
+Algorithm:
+1. Find all short answer containers
+2. For each question in container:
+   a. Check chevron.filled - if filled: skip
+   b. Find show answer button, textarea, check button
+      - If any missing: log error, skip question
+   c. Click "Show Answer" button TWICE (required by Zybooks)
+      - First click: primes it
+      - Wait 100ms
+      - Second click: reveals answer
+      - Wait 200ms
+   d. Find answer text in explanation div (span.forfeit-answer)
+   e. For each possible answer:
+      i. Set textarea.value = answer
+      ii. Trigger 'input' event on textarea
+      iii. Click check button
+      iv. Wait and check if chevron becomes filled
+      v. If filled: success, next question
+   f. Wait random delay before next question
+
+-----------------------------------
+E. DRAG & DROP MATCHER SOLVER
+-----------------------------------
+Purpose: Match terms to definitions by dragging
+
+Selectors:
+- Container: div.definition-match-payload
+- Term bank: .term-bank li.unselected-term div.draggable-object
+- Drop targets: div.definition-row div.term-bucket
+- Feedback: div.definition-match-explanation (within row)
+- Reset button: button.reset-button
+
+Algorithm:
+1. Find all drag-drop containers
+2. For each container:
+   a. Check existing matches (div.definition-match-explanation.correct)
+   b. If all correct and not force mode: skip
+   c. If some matches exist or force mode: click reset button
+   d. Process each target row sequentially:
+      i. Get available terms from bank (li.unselected-term)
+      ii. For each term:
+          - Simulate drag from term to target bucket
+          - Wait 100ms
+          - Check feedback div in row:
+            * If .correct class: mark target complete, break, next row
+            * If .incorrect class: try next term
+      iii. If no bank terms work, try terms from other populated buckets
+      iv. Continue until all rows filled or no more options
+   e. Wait random delay before next question
+
+Drag Simulation in Python:
+from selenium.webdriver.common.action_chains import ActionChains
+actions = ActionChains(driver)
+actions.drag_and_drop(source_element, target_element).perform()
+
+===============================================================================
+CONFIGURATION & CONSTANTS
+===============================================================================
+
+DELAYS (in milliseconds):
+- MIN_BETWEEN_QUESTIONS: 500
+- MAX_BETWEEN_QUESTIONS: 2000
+- CHECK_INTERVAL: 100
+- ANIMATION_STEP_TIMEOUT: 35000
+- ANSWER_WAIT: 2000
+
+MAX_RETRIES: 20
+
+Random delay function:
+import random
+import time
+def random_delay(min_ms, max_ms):
+    delay_seconds = random.uniform(min_ms/1000, max_ms/1000)
+    time.sleep(delay_seconds)
+
+===============================================================================
+CSS SELECTORS REFERENCE
+===============================================================================
+
+ANIMATIONS:
+- Container: div[class*="interactive-activity-container"][class*="animation-player"]
+- Chevron: div[class*="zb-chevron"][class*="title-bar-chevron"]
+- Speed checkbox: div[class*="speed-control"] input[type="checkbox"]
+- Start button: button[class*="start-button"]
+- Play button: button[aria-label="Play"]
+
+RADIO QUESTIONS:
+- Questions with radios: div[class*="question"] (that contains input[type="radio"])
+- Radio buttons: div.zb-radio-button > input
+- Feedback correct: div.zb-explanation.correct (DOCUMENT LEVEL!)
+- Feedback incorrect: div.zb-explanation.incorrect (DOCUMENT LEVEL!)
+
+CLICKABLE QUESTIONS:
+- Container: div.detect-answer-content-resource
+- Question: div.detect-answer-question
+- Buttons: button.zb-button:not(.check-button):not(.show-answer-button)
+- Chevron: div.zb-chevron.question-chevron
+
+SHORT ANSWER:
+- Container: div.short-answer-content-resource
+- Question: div.question-set-question.short-answer-question
+- Textarea: textarea.zb-text-area
+- Show Answer: button.show-answer-button
+- Check: button.check-button
+- Answers: div.answers span.forfeit-answer
+
+DRAG & DROP:
+- Container: div.definition-match-payload
+- Terms: li.unselected-term div.draggable-object
+- Drop zones: div.definition-row div.term-bucket
+- Feedback: div.definition-match-explanation
+- Reset: button.reset-button
+
+===============================================================================
+PYTHON IMPLEMENTATION STRUCTURE
+===============================================================================
+
+Recommended file structure:
+
+zybooks_solver/
+├── main.py                    # Entry point, launches GUI and browser
+├── config.py                  # Constants, selectors, delays
+├── gui/
+│   ├── __init__.py
+│   └── control_panel.py      # tkinter/PyQt GUI
+├── solvers/
+│   ├── __init__.py
+│   ├── base_solver.py        # Base class with common methods
+│   ├── question_scanner.py   # NEW: Unified question detection & classification
+│   ├── animation_solver.py   # AnimationSolver class
+│   ├── radio_solver.py       # RadioQuestionSolver class
+│   ├── clickable_solver.py   # ClickableQuestionSolver class
+│   ├── short_answer_solver.py # ShortAnswerSolver class
+│   └── drag_drop_solver.py   # DragDropSolver class
+├── utils/
+│   ├── __init__.py
+│   ├── browser.py            # Browser setup/control
+│   └── logger.py             # Logging utilities
+└── requirements.txt
+
+requirements.txt:
+selenium==4.16.0
+webdriver-manager==4.0.1
+
+OR (if using Playwright):
+playwright==1.40.0
+
+===============================================================================
+KEY IMPLEMENTATION CHALLENGES
+===============================================================================
+
+1. FEEDBACK DETECTION FOR RADIO QUESTIONS
+   Problem: Feedback appears at document level, not within question
+   Solution: After clicking radio button:
+   - Wait 500ms to let old feedback clear
+   - Use driver.find_element(By.CSS_SELECTOR, 'div.zb-explanation.correct')
+   - Check at document level, not within question element
+
+3. SHORT ANSWER REQUIRES TWO CLICKS
+   Problem: Show answer button must be clicked twice
+   Solution: 
+   - Click once, wait 100ms
+   - Click again, wait 200ms
+   - Then find answers
+
+4. DRAG & DROP SIMULATION
+   Problem: Need to simulate drag and drop
+   Solution (Selenium):
+   from selenium.webdriver.common.action_chains import ActionChains
+   actions = ActionChains(driver)
+   actions.drag_and_drop(source, target).perform()
+
+5. TIMING IS CRITICAL
+   - Too fast: elements not loaded, actions fail
+   - Too slow: takes forever
+   - Solution: Use WebDriverWait with expected conditions
+   from selenium.webdriver.support.ui import WebDriverWait
+   from selenium.webdriver.support import expected_conditions as EC
+
+===============================================================================
+EXAMPLE SELENIUM CODE STRUCTURE
+===============================================================================
+# ============================================================================
+# NEW: QUESTION SCANNER CLASS
+# ============================================================================
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+import random
+
+class QuestionScanner:
+    """Scans page and classifies all questions by type and completion status"""
+    
+    def __init__(self, driver, logger):
+        self.driver = driver
+        self.logger = logger
+    
+    def scan_all_questions(self):
+        """
+        Scan entire page and return array of all questions with metadata
+        
+        Returns:
+            list: Array of question dictionaries in DOM order
+        """
+        questions = []
+        
+        # Get all potential question containers in DOM order
+        all_elements = self.driver.find_elements(By.CSS_SELECTOR, 'div')
+        
+        for idx, element in enumerate(all_elements):
+            question_data = self.classify_element(element, idx)
+            if question_data:
+                questions.append(question_data)
+        
+        # Output scan results
+        self.output_scan_results(questions)
+        
+        return questions
+    
+    def classify_element(self, element, index):
+        """
+        Determine if element is a question and what type
+        
+        Returns:
+            dict or None: Question data if element is a question, None otherwise
+        """
+        try:
+            # Check for Animation
+            if self.is_animation(element):
+                return {
+                    'index': index,
+                    'type': 'animation',
+                    'element': element,
+                    'completed': self.is_animation_complete(element),
+                    'details': {}
+                }
+            
+            # Check for Radio Question
+            if self.is_radio_question(element):
+                return {
+                    'index': index,
+                    'type': 'radio',
+                    'element': element,
+                    'completed': self.is_radio_complete(element),
+                    'details': {}
+                }
+            
+            # Check for Clickable Question
+            if self.is_clickable_question(element):
+                return {
+                    'index': index,
+                    'type': 'clickable',
+                    'element': element,
+                    'completed': self.is_clickable_complete(element),
+                    'details': {}
+                }
+            
+            # Check for Short Answer
+            if self.is_short_answer(element):
+                return {
+                    'index': index,
+                    'type': 'short_answer',
+                    'element': element,
+                    'completed': self.is_short_answer_complete(element),
+                    'details': {}
+                }
+            
+            # Check for Drag & Drop
+            if self.is_drag_drop(element):
+                return {
+                    'index': index,
+                    'type': 'drag_drop',
+                    'element': element,
+                    'completed': self.is_drag_drop_complete(element),
+                    'details': {}
+                }
+            
+        except Exception as e:
+            pass
+        
+        return None
+    
+    def is_animation(self, element):
+        """Check if element is an animation question"""
+        classes = element.get_attribute('class') or ''
+        return 'animation-player' in classes and 'interactive-activity-container' in classes
+    
+    def is_animation_complete(self, element):
+        """Check if animation is completed"""
+        try:
+            chevron = element.find_element(By.CSS_SELECTOR, 'div[class*="zb-chevron"]')
+            classes = chevron.get_attribute('class') or ''
+            return 'filled' in classes or 'orange' in classes
+        except:
+            return False
+    
+    def is_radio_question(self, element):
+        """Check if element is a radio question"""
+        try:
+            radios = element.find_elements(By.CSS_SELECTOR, 'input[type="radio"]')
+            return len(radios) > 0 and 'question' in (element.get_attribute('class') or '')
+        except:
+            return False
+    
+    def is_radio_complete(self, element):
+        """Check if radio question is completed"""
+        try:
+            radios = element.find_elements(By.CSS_SELECTOR, 'input[type="radio"]')
+            return any(r.is_selected() for r in radios)
+        except:
+            return False
+    
+    def is_clickable_question(self, element):
+        """Check if element is a clickable question"""
+        classes = element.get_attribute('class') or ''
+        return 'detect-answer-question' in classes
+    
+    def is_clickable_complete(self, element):
+        """Check if clickable question is completed"""
+        try:
+            chevron = element.find_element(By.CSS_SELECTOR, 'div.zb-chevron.question-chevron')
+            classes = chevron.get_attribute('class') or ''
+            return 'filled' in classes
+        except:
+            return False
+    
+    def is_short_answer(self, element):
+        """Check if element is a short answer question"""
+        classes = element.get_attribute('class') or ''
+        return 'short-answer-question' in classes
+    
+    def is_short_answer_complete(self, element):
+        """Check if short answer is completed"""
+        try:
+            chevron = element.find_element(By.CSS_SELECTOR, 'div.zb-chevron')
+            classes = chevron.get_attribute('class') or ''
+            return 'filled' in classes
+        except:
+            return False
+    
+    def is_drag_drop(self, element):
+        """Check if element is a drag & drop question"""
+        classes = element.get_attribute('class') or ''
+        return 'definition-match-payload' in classes
+    
+    def is_drag_drop_complete(self, element):
+        """Check if drag & drop is completed"""
+        try:
+            rows = element.find_elements(By.CSS_SELECTOR, 'div.definition-row')
+            if not rows:
+                return False
+            correct = element.find_elements(By.CSS_SELECTOR, 'div.definition-match-explanation.correct')
+            return len(correct) == len(rows)
+        except:
+            return False
+    
+    def output_scan_results(self, questions):
+        """Output formatted scan results to log"""
+        self.logger.info("\n" + "="*50)
+        self.logger.info("[SCAN RESULTS]")
+        self.logger.info("="*50)
+        self.logger.info(f"Found {len(questions)} questions on page:\n")
+        
+        # Count by type
+        counts = {}
+        for q in questions:
+            qtype = q['type']
+            if qtype not in counts:
+                counts[qtype] = {'total': 0, 'completed': 0, 'incomplete': 0}
+            counts[qtype]['total'] += 1
+            if q['completed']:
+                counts[qtype]['completed'] += 1
+            else:
+                counts[qtype]['incomplete'] += 1
+        
+        # List all questions
+        type_labels = {
+            'animation': 'Animation',
+            'radio': 'Radio',
+            'clickable': 'Clickable',
+            'short_answer': 'Short Answer',
+            'drag_drop': 'Drag & Drop'
+        }
+        
+        for idx, q in enumerate(questions, 1):
+            label = type_labels.get(q['type'], q['type'])
+            status = "✓ Completed" if q['completed'] else "✗ Incomplete"
+            self.logger.info(f"{idx:2d}. [{label:13s}] {status}")
+        
+        # Summary
+        self.logger.info("\nSummary:")
+        for qtype, stats in counts.items():
+            label = type_labels.get(qtype, qtype)
+            self.logger.info(
+                f"- {label}: {stats['total']} total "
+                f"({stats['completed']} completed, {stats['incomplete']} incomplete)"
+            )
+        self.logger.info("="*50 + "\n")
+
+# ============================================================================
+# MODIFIED: SOLVER MANAGER (uses scanner first)
+# ============================================================================
+
+class SolverManager:
+    """Manages question scanning and solver execution"""
+    
+    def __init__(self, driver, logger):
+        self.driver = driver
+        self.logger = logger
+        self.scanner = QuestionScanner(driver, logger)
+        # Initialize solvers...
+    
+    def run(self, action, force_mode):
+        """Run selected solver with unified scanning"""
+        
+        # PHASE 1: Scan all questions
+        self.logger.info("PHASE 1: Scanning page for questions...")
+        all_questions = self.scanner.scan_all_questions()
+        
+        if not all_questions:
+            self.logger.error("No questions found on page!")
+            return
+        
+        # PHASE 2: Filter by type and force mode
+        self.logger.info("PHASE 2: Filtering questions...")
+        filtered = self.filter_questions(all_questions, action, force_mode)
+        
+        if not filtered:
+            self.logger.info("No questions to process after filtering")
+            return
+        
+        # PHASE 3: Solve
+        self.logger.info("PHASE 3: Solving questions...")
+        self.solve_filtered_questions(filtered, action, force_mode)
+    
+    def filter_questions(self, questions, action, force_mode):
+        """Filter questions based on action and force mode"""
+        # Map actions to types
+        type_map = {
+            "Solve Radio Questions": "radio",
+            "Solve Animations": "animation",
+            "Solve Clickable Questions": "clickable",
+            "Solve Short Answer": "short_answer",
+            "Solve Drag & Drop": "drag_drop",
+        }
+        
+        filtered = []
+        
+        for q in questions:
+            # Filter by type (unless "Solve All")
+            if action != "Solve All":
+                target_type = type_map.get(action)
+                if q['type'] != target_type:
+                    continue
+            
+            # Filter by completion (unless force mode)
+            if not force_mode and q['completed']:
+                continue
+            
+            filtered.append(q)
+        
+        return filtered
+
+# ============================================================================
+# MODIFIED: Individual solvers now accept pre-scanned questions
+# ============================================================================
+import random
+
+class RadioQuestionSolver:
+    def __init__(self, driver, logger):
+        self.driver = driver
+        self.logger = logger
+    
+    def solve_questions(self, questions):
+        """
+        Solve pre-scanned radio questions
+        
+        Args:
+            questions: List of question dictionaries (already filtered)
+        """
+        self.logger.info(f"Processing {len(questions)} radio questions")
+        
+        # Solve each question
+        for question_data in questions:
+            self.solve_question(question_data['element'])
+            time.sleep(random.uniform(0.5, 2.0))
+    
+    def solve_question(self, question_element):
+        """Solve a single radio question"""
+        radios = question_element.find_elements(By.CSS_SELECTOR, 'input[type="radio"]')
+        self.logger.log(f"Found {len(radios)} radio buttons")
+        
+        for radio in radios:
+            # Get button text
+            parent = radio.find_element(By.XPATH, '..')
+            text = parent.text.strip()
+            self.logger.log(f"Trying option: {text}")
+            
+            # Click radio
+            radio.click()
+            
+            # Wait for old feedback to clear
+            time.sleep(0.5)
+            
+            # Check for feedback at DOCUMENT level
+            wait_time = 0
+            while wait_time < 2.0:
+                try:
+                    correct = self.driver.find_element(
+                        By.CSS_SELECTOR, 
+                        'div.zb-explanation.correct'
+                    )
+                    self.logger.log("✓ Correct answer found!")
+                    return
+                except:
+                    pass
+                
+                try:
+                    incorrect = self.driver.find_element(
+                        By.CSS_SELECTOR, 
+                        'div.zb-explanation.incorrect'
+                    )
+                    self.logger.log("✗ Incorrect, trying next option")
+                    break
+                except:
+                    pass
+                
+                time.sleep(0.1)
+                wait_time += 0.1
+
+===============================================================================
+GUI IMPLEMENTATION (tkinter example)
+===============================================================================
+
+import tkinter as tk
+from tkinter import scrolledtext
+import threading
+
+class ControlPanel:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Zybooks Solver")
+        self.root.geometry("400x600")
+        
+        # Dropdown
+        self.action_var = tk.StringVar()
+        self.dropdown = tk.OptionMenu(
+            self.root, 
+            self.action_var,
+            "Select Action...",
+            "Solve All",
+            "Solve Radio Questions",
+            "Solve Animations",
+            "Solve Clickable Questions",
+            "Solve Short Answer",
+            "Solve Drag & Drop",
+            "Reset Chevrons"
+        )
+        self.dropdown.pack(pady=10, fill=tk.X, padx=10)
+        
+        # Force mode checkbox
+        self.force_mode = tk.BooleanVar()
+        self.force_check = tk.Checkbutton(
+            self.root,
+            text="Force Mode",
+            variable=self.force_mode
+        )
+        self.force_check.pack(pady=5)
+        
+        # Run/Stop buttons
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(pady=10, fill=tk.X, padx=10)
+        
+        self.run_btn = tk.Button(
+            btn_frame,
+            text="Run",
+            command=self.on_run,
+            bg="#007bff",
+            fg="white"
+        )
+        self.run_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+        
+        self.stop_btn = tk.Button(
+            btn_frame,
+            text="Stop",
+            command=self.on_stop,
+            bg="#dc3545",
+            fg="white"
+        )
+        self.stop_btn.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=5)
+        
+        # Output panel
+        self.output_visible = False
+        self.toggle_btn = tk.Button(
+            self.root,
+            text="Show Output",
+            command=self.toggle_output
+        )
+        self.toggle_btn.pack(pady=5, fill=tk.X, padx=10)
+        
+        self.output = scrolledtext.ScrolledText(
+            self.root,
+            height=20,
+            state='disabled'
+        )
+        # Initially hidden
+        
+        self.is_running = False
+        
+    def toggle_output(self):
+        self.output_visible = not self.output_visible
+        if self.output_visible:
+            self.output.pack(pady=5, fill=tk.BOTH, expand=True, padx=10)
+            self.toggle_btn.config(text="Hide Output")
+        else:
+            self.output.pack_forget()
+            self.toggle_btn.config(text="Show Output")
+    
+    def log(self, message):
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%I:%M:%S %p")
+        msg = f"[{timestamp}] {message}\n"
+        self.output.config(state='normal')
+        self.output.insert(tk.END, msg)
+        self.output.see(tk.END)
+        self.output.config(state='disabled')
+    
+    def on_run(self):
+        self.is_running = True
+        action = self.action_var.get()
+        force = self.force_mode.get()
+        # Start solver in separate thread
+        thread = threading.Thread(
+            target=self.run_solver,
+            args=(action, force)
+        )
+        thread.start()
+    
+    def on_stop(self):
+        self.is_running = False
+        self.log("Stopped by user")
+    
+    def run_solver(self, action, force):
+        # This is where you'd call your solver classes
+        self.log(f"Starting {action} solver (Force Mode: {force})")
+        # Call appropriate solver based on action
+    
+    def start(self):
+        self.root.mainloop()
+
+===============================================================================
+USAGE WORKFLOW
+===============================================================================
+
+1. User runs Python script
+2. Script opens Chrome browser window
+3. Script opens control panel GUI window
+4. User manually navigates to Zybooks and logs in
+5. User navigates to chapter/section with questions
+6. User selects action from dropdown in control panel
+7. User optionally enables Force Mode
+8. User clicks "Run"
+9. Script automatically solves questions
+10. Logs appear in output panel
+11. User can click "Stop" at any time
+12. When done, user closes both windows
+
+===============================================================================
+FINAL NOTES & RECOMMENDATIONS
+===============================================================================
+
+1. Use Selenium WebDriver with Chrome (most reliable)
+2. Install webdriver-manager to auto-download ChromeDriver
+3. Use threading for GUI to prevent freezing
+4. Add try-except around all element finding operations
+5. Use WebDriverWait instead of time.sleep when possible
+6. Test each solver independently before combining
+7. Add verbose logging to debug issues
+8. Consider adding screenshot capture on errors
+9. Implement stop/pause mechanism properly with threading.Event
+10. Handle StaleElementReferenceException (elements reload)
+
+Good luck with implementation!
